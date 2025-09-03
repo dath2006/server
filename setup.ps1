@@ -69,19 +69,19 @@ try {
 Write-Host ""
 Write-Host "Setup complete!" -ForegroundColor Green
 Write-Host ""
+Write-Host "Don't forget to:" -ForegroundColor Yellow
+Write-Host "2. Update database credentials in .env.local (change the username and password)" -ForegroundColor White
+Write-Host "3. Create PostgreSQL database using:" -ForegroundColor White
+Write-Host "4. Run: alembic revision --autogenerate -m 'Initial migration'" -ForegroundColor White
+Write-Host "5. Run: alembic upgrade head" -ForegroundColor White
+Write-Host "6. Run: python init_db.py (to create admin user)" -ForegroundColor White
+Write-Host "6. Run: python add_sample_data.py (to add initial posts data)" -ForegroundColor White
+Write-Host ""
 Write-Host "To activate the environment in the future, run:" -ForegroundColor Cyan
 Write-Host "   venv\Scripts\Activate.ps1" -ForegroundColor White
 Write-Host ""
 Write-Host "To start the development server, run:" -ForegroundColor Cyan
 Write-Host "   python run.py" -ForegroundColor White
 Write-Host ""
-Write-Host "Don't forget to:" -ForegroundColor Yellow
-Write-Host "1. Copy .env.example to .env" -ForegroundColor White
-Write-Host "2. Update database credentials in .env" -ForegroundColor White
-Write-Host "3. Create PostgreSQL database" -ForegroundColor White
-Write-Host "4. Run: alembic revision --autogenerate -m 'Initial migration'" -ForegroundColor White
-Write-Host "5. Run: alembic upgrade head" -ForegroundColor White
-Write-Host "6. Run: python init_db.py (to create admin user)" -ForegroundColor White
-Write-Host "6. Run: python add_sample_data.py (to add initial posts data)" -ForegroundColor White
 
 Read-Host "Press Enter to exit"
