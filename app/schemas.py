@@ -1,6 +1,6 @@
 
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List, Literal
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, List, Literal, Dict, Any
 from datetime import datetime
 
 # User schemas
@@ -57,20 +57,29 @@ class CategoryBase(BaseModel):
     slug: str
     description: Optional[str] = None
     user_id: int
+    is_listed: Optional[bool] = True
+    display_order: Optional[int] = 0
 
-class CategoryCreate(CategoryBase):
-    pass
+class CategoryCreate(BaseModel):
+    name: str
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    is_listed: Optional[bool] = True
+    display_order: Optional[int] = 0
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     slug: Optional[str] = None
     description: Optional[str] = None
-    user_id: Optional[int] = None
+    is_listed: Optional[bool] = None
+    display_order: Optional[int] = None
 
 class CategoryResponse(CategoryBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    post_count: Optional[int] = 0
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 # Post schemas
 class PostBase(BaseModel):
@@ -338,6 +347,30 @@ class SettingResponse(SettingBase):
     id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+# Admin Settings schemas
+class UpdateSettingData(BaseModel):
+    value: str
+    type: Optional[Literal["string", "boolean", "number", "json"]] = "string"
+    description: Optional[str] = None
+
+class UpdateSettingsData(BaseModel):
+    settings: Dict[str, UpdateSettingData]
+
+class AdminSettingsResponse(BaseModel):
+    success: bool
+    data: List[SettingResponse]
+    message: Optional[str] = None
+
+class UpdateSettingsResponse(BaseModel):
+    success: bool
+    data: List[SettingResponse]
+    message: Optional[str] = None
+
+class SingleSettingResponse(BaseModel):
+    success: bool
+    data: SettingResponse
+    message: Optional[str] = None
 
 
 # File upload schema
@@ -741,3 +774,265 @@ class GoogleUser(BaseModel):
     name: Optional[str] = None
     google_id: str
     image: Optional[str] = None
+
+
+class GoogleUserCreate(BaseModel):
+    email: str
+    name: Optional[str] = None
+    username: str
+    google_id: str
+    image: Optional[str] = None
+
+
+class UserAuthResponse(BaseModel):
+    """Response model for authentication endpoints with role and token"""
+    id: int
+    email: str
+    username: str
+    full_name: Optional[str] = None
+    website: Optional[str] = None
+    image: Optional[str] = None
+    group_id: int
+    role: str  # Based on group_id mapping
+    is_active: bool
+    approved: bool
+    joined_at: Optional[datetime] = None
+    access_token: str
+    token_type: str = "bearer"
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Admin Category schemas
+class CreateCategoryData(BaseModel):
+    name: str
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    is_listed: Optional[bool] = Field(True, alias="isListed")
+    display_order: Optional[int] = Field(0, alias="displayOrder")
+
+class UpdateCategoryData(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    is_listed: Optional[bool] = Field(None, alias="isListed")
+    display_order: Optional[int] = Field(None, alias="displayOrder")
+
+class AdminCategoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    is_listed: bool = Field(alias="isListed")
+    display_order: int = Field(alias="displayOrder")
+    post_count: int = Field(alias="postCount")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: Optional[datetime] = Field(None, alias="updatedAt")
+
+class CategoryStatsResponse(BaseModel):
+    total: int
+    listed: int
+    unlisted: int
+    total_posts: int
+
+class CategoryPaginationInfo(BaseModel):
+    current_page: int
+    total_pages: int
+    total_categories: int
+    limit: int
+    has_next: bool
+    has_previous: bool
+    next_page: Optional[int] = None
+    previous_page: Optional[int] = None
+
+class CategoryFilters(BaseModel):
+    search: Optional[str] = None
+    is_listed: Optional[bool] = None
+
+class AdminCategoriesResponse(BaseModel):
+    data: List[AdminCategoryResponse]
+    pagination: CategoryPaginationInfo
+    filters: CategoryFilters
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[int]
+
+class ReorderCategoriesRequest(BaseModel):
+    category_ids: List[int]
+
+
+# Comment schemas
+class CommentBase(BaseModel):
+    id: int
+    body: str
+    author: str  # Will be populated from user.username or user.full_name
+    email: str   # Will be populated from user.email
+    url: Optional[str] = None  # Will be populated from user.website
+    ip: str      # user_ip field
+    status: Literal['pending', 'approved', 'spam', 'denied']
+    created_at: datetime
+    updated_at: datetime
+
+class CommentResponse(CommentBase):
+    model_config = ConfigDict(from_attributes=True)
+
+class PostInfo(BaseModel):
+    id: int
+    title: str
+    url: str
+    model_config = ConfigDict(from_attributes=True)
+
+class PostWithComments(BaseModel):
+    post: PostInfo
+    comments: List[CommentResponse]
+
+class CommentUpdateStatus(BaseModel):
+    status: Literal['pending', 'approved', 'spam', 'denied']
+
+class CommentBatchRequest(BaseModel):
+    comment_ids: List[int] = Field(alias="commentIds")
+    action: Literal['approve', 'deny', 'spam', 'delete']
+
+class CommentPaginationInfo(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    page: int
+    limit: int
+    total: int
+    pages: int
+    has_next: bool = Field(alias="hasNext")
+    has_prev: bool = Field(alias="hasPrev")
+
+class CommentStats(BaseModel):
+    total: int
+    pending: int
+    approved: int
+    spam: int
+    denied: int
+
+class CommentsResponse(BaseModel):
+    data: List[PostWithComments]  # Changed to grouped format
+    pagination: CommentPaginationInfo
+    stats: CommentStats
+
+class CommentBatchResponse(BaseModel):
+    success: bool
+    processed: int
+    errors: Optional[List[Dict[str, str]]] = None
+
+# Spam schemas (using same Comment structure but filtered by status='spam')
+class SpamItemResponse(CommentBase):
+    """Spam items are just comments with status='spam'"""
+    model_config = ConfigDict(from_attributes=True)
+
+class PostWithSpamItems(BaseModel):
+    post: PostInfo
+    comments: List[SpamItemResponse]  # Using same structure but called comments for consistency
+    model_config = ConfigDict(from_attributes=True)
+
+class SpamBatchRequest(BaseModel):
+    spam_ids: List[int] = Field(alias="spamIds")
+    action: Literal['approve', 'reject', 'delete']
+
+class SpamStats(BaseModel):
+    total: int
+    spam: int
+    approved: int
+    rejected: int  # This will be 'denied' status in database
+
+class SpamResponse(BaseModel):
+    data: List[PostWithSpamItems]  # Changed to grouped format
+    pagination: CommentPaginationInfo
+    stats: SpamStats
+
+class SpamBatchResponse(BaseModel):
+    success: bool
+    processed: int
+    errors: Optional[List[Dict[str, str]]] = None
+
+class MarkCommentAsSpamRequest(BaseModel):
+    comment_id: int = Field(alias="commentId")
+
+
+# Post with Comments schemas for grouped view
+class PostInfo(BaseModel):
+    id: int
+    title: str
+    url: str
+    model_config = ConfigDict(from_attributes=True)
+
+class CommentInPost(BaseModel):
+    id: int
+    body: str
+    author: str
+    email: str
+    url: Optional[str] = None
+    ip: str
+    status: Literal['pending', 'approved', 'spam', 'denied']
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+class PostWithComments(BaseModel):
+    post: PostInfo
+    comments: List[CommentInPost]
+    comment_count: int = Field(alias="commentCount")
+
+class GroupedCommentsResponse(BaseModel):
+    data: List[PostWithComments]
+    pagination: CommentPaginationInfo
+    stats: CommentStats
+
+# Module schemas
+class ModuleBase(BaseModel):
+    name: str
+    description: str
+    status: Optional[str] = None
+    canDisable: Optional[bool] = None
+    canUninstall: Optional[bool] = None
+    conflicts: Optional[str] = None
+
+class ModuleResponse(ModuleBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+class ModuleUpdate(BaseModel):
+    status: Optional[str] = None
+
+class ModulesResponse(BaseModel):
+    data: List[ModuleResponse]
+    total: int
+
+# Feather schemas
+class FeatherBase(BaseModel):
+    name: str
+    description: str
+    status: Optional[str] = None
+    canDisable: Optional[bool] = None
+
+class FeatherResponse(FeatherBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+class FeatherUpdate(BaseModel):
+    status: Optional[str] = None
+
+class FeathersResponse(BaseModel):
+    data: List[FeatherResponse]
+    total: int
+
+# Theme schemas
+class ThemeBase(BaseModel):
+    name: str
+    description: str
+    isActive: Optional[bool] = None
+
+class ThemeResponse(ThemeBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+class ThemeUpdate(BaseModel):
+    isActive: Optional[bool] = None
+
+class ThemesResponse(BaseModel):
+    data: List[ThemeResponse]
+    total: int

@@ -1,4 +1,3 @@
-
 from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey, BigInteger, Sequence, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -47,7 +46,10 @@ class Category(Base):
     name = Column(String(100), nullable=False)
     slug = Column(String(100), unique=True, nullable=False)
     description = Column(Text)
+    is_listed = Column(Boolean, nullable=False, default=True)
+    display_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     user = relationship("User", back_populates="categories")
     posts = relationship("Post", back_populates="category")
 
@@ -92,6 +94,9 @@ class PostAttribute(Base):
     rights_holder = Column(String(255))
     license = Column(String(50), nullable=False, default='All Rights Reserved')
     scheduled_at = Column(DateTime(timezone=True))
+    allow_comments = Column(Boolean, nullable=False, default=True)
+    visibility = Column(String(20), nullable=False, default='public')
+    visibility_groups = Column(String(500))  # JSON string for group IDs
     post = relationship("Post", back_populates="attributes")
 
 # Uploads table
@@ -118,6 +123,7 @@ class Tag(Base):
     post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String(100), nullable=False)
+    status = Column(String(20), nullable=False, default="published")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     post = relationship("Post", back_populates="tags")
     user = relationship("User", back_populates="tags")
@@ -135,7 +141,7 @@ class Comment(Base):
     user_agent = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    status = Column(String(20), nullable=False, default='pending')
+    status = Column(String(20), nullable=False, default='pending')  # pending, approved, spam, denied
     post = relationship("Post", back_populates="comments")
     user = relationship("User", back_populates="comments")
     parent = relationship("Comment", remote_side=[id])
@@ -207,3 +213,31 @@ class Setting(Base):
     type = Column(String(20), default='string')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+# Modules table
+class Module(Base):
+    __tablename__ = "modules"
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    status = Column(String(50), nullable=True)
+    canDisable = Column(Boolean, nullable=True)
+    canUninstall = Column(Boolean, nullable=True)
+    conflicts = Column(Text, nullable=True)
+
+# Feathers table
+class Feather(Base):
+    __tablename__ = "feathers"
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    status = Column(String(50), nullable=True)
+    canDisable = Column(Boolean, nullable=True)
+
+# Themes table
+class Theme(Base):
+    __tablename__ = "themes"
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    isActive = Column(Boolean, nullable=True)

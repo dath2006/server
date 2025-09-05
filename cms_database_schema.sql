@@ -222,6 +222,30 @@ CREATE TABLE "settings"(
     "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table: modules
+CREATE TABLE modules (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL
+);
+
+-- Table: feathers
+CREATE TABLE feathers (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL
+);
+
+-- Table: themes
+CREATE TABLE themes (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL
+);
+
 -- Create indexes for better performance
 CREATE INDEX idx_users_email ON "users"("email");
 CREATE INDEX idx_users_username ON "users"("username");
