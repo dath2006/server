@@ -5,7 +5,7 @@ from sqlalchemy import select, func, desc, delete
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 from app.database import get_db
-from app.auth import get_current_admin_user
+from app.auth import get_current_active_user
 from app.models import User, Group, Permission
 
 router = APIRouter()
@@ -17,7 +17,7 @@ async def get_admin_groups(
     limit: int = Query(10, ge=1, le=100, description="Number of groups per page"),
     search: Optional[str] = Query(None, description="Search in group name or description"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get groups for admin panel with pagination and filtering"""
     
@@ -108,7 +108,7 @@ async def get_admin_groups(
 async def get_admin_group(
     group_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get a single group for admin panel"""
     query = select(Group).options(
@@ -154,7 +154,7 @@ async def get_admin_group(
 async def create_admin_group(
     group_data: dict,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Create a new group"""
     
@@ -214,7 +214,7 @@ async def update_admin_group(
     group_id: int,
     group_data: dict,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Update an existing group"""
     
@@ -306,7 +306,7 @@ async def update_admin_group(
 async def delete_admin_group(
     group_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a group and handle associated data"""
     

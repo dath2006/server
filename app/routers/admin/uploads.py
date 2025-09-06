@@ -8,9 +8,11 @@ from pathlib import Path
 import uuid
 import shutil
 import mimetypes
+import json
 from app.database import get_db
-from app.auth import get_current_admin_user
+from app.auth import get_current_active_user
 from app.models import User, Upload, Post
+from app.services import upload_file_with_fallback, delete_file_with_fallback
 
 router = APIRouter()
 
@@ -24,7 +26,7 @@ async def get_admin_uploads(
     sortBy: Optional[str] = Query("uploadedAt", description="Sort by field: uploadedAt, fileName, size"),
     sortOrder: Optional[str] = Query("desc", description="Sort order: asc, desc"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get uploads for admin panel with pagination and filtering"""
     
@@ -152,7 +154,7 @@ async def get_admin_uploads(
 async def get_admin_upload(
     upload_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get a single upload for admin panel"""
     query = select(Upload).options(
@@ -204,7 +206,7 @@ async def get_admin_upload(
 @router.get("/uploads/stats", response_model=Dict[str, Any])
 async def get_uploads_stats(
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get uploads statistics for admin dashboard"""
     
@@ -263,24 +265,29 @@ def generate_unique_filename(original_filename: str) -> str:
     return unique_name
 
 
-async def save_upload_file(file: UploadFile, upload_type: str) -> str:
-    """Save uploaded file to uploads directory and return file path"""
+async def save_upload_file(file: UploadFile, upload_type: str) -> tuple[str, Dict[str, Any]]:
+    """Save uploaded file using Cloudinary with local fallback and return file URL and metadata"""
     if not file:
-        return None
+        return None, {}
     
-    # Create type-specific subdirectory
-    upload_dir = Path("uploads") / upload_type
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Generate unique filename
-    filename = generate_unique_filename(file.filename)
-    file_path = upload_dir / filename
-    
-    # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    return str(file_path)
+    try:
+        # Use the new Cloudinary service with fallback
+        file_url, metadata = await upload_file_with_fallback(file, f"uploads/{upload_type}")
+        return file_url, metadata
+    except Exception as e:
+        # Final fallback to local storage
+        upload_dir = Path("uploads") / upload_type
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename
+        filename = generate_unique_filename(file.filename)
+        file_path = upload_dir / filename
+        
+        # Save file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        return str(file_path), {'is_cloudinary': False, 'local_path': str(file_path)}
 
 
 def determine_upload_type(mime_type: str) -> str:
@@ -299,7 +306,7 @@ def determine_upload_type(mime_type: str) -> str:
 async def create_admin_upload(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Create a new upload (standalone, not linked to any post)"""
     
@@ -314,28 +321,29 @@ async def create_admin_upload(
         
         upload_type = determine_upload_type(mime_type)
         
-        # Save file to filesystem
-        file_path = await save_upload_file(file, f"{upload_type}s")  # images, videos, audios, files
+        # Save file using Cloudinary with local fallback
+        file_url, metadata = await save_upload_file(file, f"{upload_type}s")  # images, videos, audios, files
         
-        # Get file size
-        file_size = 0
-        if hasattr(file, 'size'):
+        # Get file size from metadata or file
+        file_size = metadata.get('size', 0)
+        if file_size == 0 and hasattr(file, 'size'):
             file_size = file.size
-        else:
-            # If size is not available, get it from the saved file
-            saved_file = Path(file_path)
-            if saved_file.exists():
-                file_size = saved_file.stat().st_size
+        elif file_size == 0 and not metadata.get('is_cloudinary'):
+            # For local files, get size from saved file
+            local_path = metadata.get('local_path')
+            if local_path and Path(local_path).exists():
+                file_size = Path(local_path).stat().st_size
         
         # Create upload record in database
         upload = Upload(
-            url=f"/{file_path}",  # Store relative path with leading slash
-            user_id=current_admin.id,
+            url=file_url,
+            user_id=current_user.id,
             post_id=None,  # Not linked to any post
             type=upload_type,
             size=file_size,
             name=file.filename,
-            mime_type=mime_type
+            mime_type=mime_type,
+            metadata=json.dumps(metadata) if metadata else None  # Store metadata for future use
         )
         
         db.add(upload)
@@ -351,12 +359,12 @@ async def create_admin_upload(
         
         media_type = media_type_mapping.get(upload_type, "file")
         
-        return {
+        response_data = {
             "id": str(upload.id),
             "fileName": upload.name,
             "uploadedAt": upload.uploaded_at.isoformat() if upload.uploaded_at else None,
             "uploader": {
-                "name": current_admin.full_name if current_admin.full_name else current_admin.username
+                "name": current_user.full_name if current_user.full_name else current_user.username
             },
             "size": upload.size or 0,
             "mediaType": media_type,
@@ -365,6 +373,19 @@ async def create_admin_upload(
             "isLinkedToPost": False,
             "message": "Upload created successfully"
         }
+        
+        # Add Cloudinary-specific information if available
+        if metadata.get('is_cloudinary'):
+            response_data.update({
+                "cloudinary": {
+                    "public_id": metadata.get('public_id'),
+                    "resource_type": metadata.get('resource_type'),
+                    "format": metadata.get('format'),
+                    "version": metadata.get('version')
+                }
+            })
+        
+        return response_data
     
     except Exception as e:
         await db.rollback()
@@ -377,7 +398,7 @@ async def create_admin_upload(
 async def delete_admin_upload(
     upload_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete an upload if it's not linked to any post"""
     
@@ -444,7 +465,7 @@ async def update_admin_upload(
     upload_id: int,
     upload_data: dict,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Update upload metadata (mainly fileName)"""
     
@@ -507,7 +528,7 @@ async def update_admin_upload(
 @router.post("/uploads/cleanup", response_model=Dict[str, Any])
 async def cleanup_orphaned_uploads(
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Clean up orphaned uploads (uploads not linked to any post)"""
     

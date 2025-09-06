@@ -12,8 +12,9 @@ import mimetypes
 from datetime import datetime
 from pathlib import Path
 from app.database import get_db
-from app.auth import get_current_admin_user
+from app.auth import get_current_active_user
 from app.models import User, Post, PostAttribute, Comment, Like, Share, View, Upload, Tag, Category
+from app.services import upload_file_with_fallback
 
 router = APIRouter()
 
@@ -26,7 +27,7 @@ async def get_admin_posts(
     user_id: Optional[int] = Query(None, description="Filter by user ID"),
     search: Optional[str] = Query(None, description="Search in title and body"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get posts for admin panel with pagination and filtering"""
     
@@ -254,7 +255,7 @@ async def get_all_admin_posts(
     status: Optional[str] = Query(None, description="Filter by post status"),
     search: Optional[str] = Query(None, description="Search in title"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get all posts in simplified format for admin selection/listing"""
     
@@ -348,7 +349,7 @@ async def get_all_admin_posts(
 async def get_admin_post(
     post_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get a single post for admin panel in compressed format"""
     query = select(Post).options(
@@ -499,7 +500,7 @@ async def get_admin_post(
 @router.get("/posts/stats", response_model=Dict[str, Any])
 async def get_posts_stats(
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get posts statistics for admin dashboard"""
     
@@ -560,24 +561,29 @@ def generate_unique_filename(original_filename: str) -> str:
     return unique_name
 
 
-async def save_upload_file(file: UploadFile, upload_type: str) -> str:
-    """Save uploaded file to uploads directory and return file path"""
+async def save_upload_file(file: UploadFile, upload_type: str) -> tuple[str, dict]:
+    """Save uploaded file using Cloudinary with local fallback and return file URL and metadata"""
     if not file:
-        return None
+        return None, {}
     
-    # Create type-specific subdirectory
-    upload_dir = Path("uploads") / upload_type
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Generate unique filename
-    filename = generate_unique_filename(file.filename)
-    file_path = upload_dir / filename
-    
-    # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    return str(file_path)
+    try:
+        # Use Cloudinary service with fallback
+        file_url, metadata = await upload_file_with_fallback(file, f"uploads/{upload_type}")
+        return file_url, metadata
+    except Exception as e:
+        # Final fallback to local storage
+        upload_dir = Path("uploads") / upload_type
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename
+        filename = generate_unique_filename(file.filename)
+        file_path = upload_dir / filename
+        
+        # Save file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        return str(file_path), {'is_cloudinary': False, 'local_path': str(file_path)}
 
 
 async def handle_category(category_name: str, user_id: int, db: AsyncSession) -> Optional[int]:
@@ -655,18 +661,22 @@ async def handle_tags(post_id: int, tag_names: List[str], user_id: int, db: Asyn
 
 
 async def create_upload_record(file_path: str, original_filename: str, file_size: int, 
-                             upload_type: str, user_id: int, post_id: int, db: AsyncSession) -> Upload:
+                             upload_type: str, user_id: int, post_id: int, db: AsyncSession, metadata: dict = None) -> Upload:
     """Create upload record in database"""
     mime_type, _ = mimetypes.guess_type(original_filename)
     
+    # Use file_path as-is since it's already the full URL for Cloudinary or relative path for local
+    upload_url = file_path if file_path.startswith('http') else f"/{file_path}"
+    
     upload = Upload(
-        url=f"/{file_path}",  # Store relative path
+        url=upload_url,
         user_id=user_id,
         post_id=post_id,
         type=upload_type,
         size=file_size,
         name=original_filename,
-        mime_type=mime_type or "application/octet-stream"
+        mime_type=mime_type or "application/octet-stream",
+        metadata=json.dumps(metadata) if metadata else None
     )
     db.add(upload)
     return upload
@@ -704,7 +714,7 @@ def map_content_to_post_fields(post_type: str, content: dict) -> dict:
 async def create_admin_post(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Create a new post - handles both JSON and multipart/form-data"""
     
@@ -780,23 +790,28 @@ async def create_admin_post(
         if post_data["type"] == "photo" and not imageFiles:
             raise HTTPException(status_code=400, detail="Image files are required for photo posts")
         
-        if post_data["type"] == "video" and content.get("sourceType") == "upload" and not videoFile:
-            raise HTTPException(status_code=400, detail="Video file is required for video upload posts")
+        # For video posts, check if either videoFile is provided (for uploads) or videoUrl is provided (for URL videos)
+        if post_data["type"] == "video":
+            has_video_file = videoFile and hasattr(videoFile, 'filename') and videoFile.filename
+            has_video_url = content.get("videoUrl")
+            if not has_video_file and not has_video_url:
+                raise HTTPException(status_code=400, detail="Either video file or video URL is required for video posts")
         
         if post_data["type"] == "audio" and not audioFile:
             raise HTTPException(status_code=400, detail="Audio file is required for audio posts")
         
         if post_data["type"] == "file" and not files:
             raise HTTPException(status_code=400, detail="Files are required for file posts")
-    
-    if post_data["type"] == "video" and content.get("sourceType") == "url" and not content.get("videoUrl"):
-        raise HTTPException(status_code=400, detail="Video URL is required for video URL posts")
+    else:
+        # For JSON requests, only URL-based videos are allowed
+        if post_data["type"] == "video" and not content.get("videoUrl"):
+            raise HTTPException(status_code=400, detail="Video URL is required for video posts in JSON requests")
     
     try:
         # Handle category
         category_id = await handle_category(
             post_data.get("category"), 
-            current_admin.id, 
+            current_user.id, 
             db
         )
         
@@ -810,8 +825,8 @@ async def create_admin_post(
         # Map content to post fields
         post_fields = map_content_to_post_fields(post_data["type"], content)
         
-        # Handle video URL for URL-type videos
-        if post_data["type"] == "video" and content.get("sourceType") == "url":
+        # Handle video URL for URL-type videos (when videoUrl is provided but no video file)
+        if post_data["type"] == "video" and content.get("videoUrl") and not videoFile:
             post_fields["link_url"] = content.get("videoUrl")
         
         # Create post record
@@ -819,7 +834,7 @@ async def create_admin_post(
             title=post_data["title"],
             type=post_data["type"],
             url=post_url,
-            user_id=current_admin.id,
+            user_id=current_user.id,
             category_id=category_id,
             **post_fields
         )
@@ -865,7 +880,7 @@ async def create_admin_post(
         
         # Handle tags
         if post_data.get("tags"):
-            await handle_tags(post.id, post_data["tags"], current_admin.id, db)
+            await handle_tags(post.id, post_data["tags"], current_user.id, db)
         
         # Process file uploads based on post type (only for multipart requests)
         uploaded_files = []
@@ -874,76 +889,79 @@ async def create_admin_post(
             if post_data["type"] == "photo" and imageFiles:
                 for image_file in imageFiles:
                     if hasattr(image_file, 'filename') and image_file.filename:
-                        file_path = await save_upload_file(image_file, "images")
+                        file_path, metadata = await save_upload_file(image_file, "images")
                         upload = await create_upload_record(
                             file_path, image_file.filename, 
                             getattr(image_file, 'size', 0), "image",
-                            current_admin.id, post.id, db
+                            current_user.id, post.id, db, metadata
                         )
                         uploaded_files.append(upload)
             
-            elif post_data["type"] == "video" and content.get("sourceType") == "upload" and videoFile:
+            elif post_data["type"] == "video" and videoFile:
                 if hasattr(videoFile, 'filename') and videoFile.filename:
-                    file_path = await save_upload_file(videoFile, "videos")
+                    file_path, metadata = await save_upload_file(videoFile, "videos")
                     upload = await create_upload_record(
                         file_path, videoFile.filename,
                         getattr(videoFile, 'size', 0), "video",
-                        current_admin.id, post.id, db
+                        current_user.id, post.id, db, metadata
                     )
                     uploaded_files.append(upload)
+                    
+                    # Set the video URL in the post record for easy access
+                    post.link_url = file_path if file_path.startswith('http') else f"/{file_path}"
             
             elif post_data["type"] == "audio" and audioFile:
                 if hasattr(audioFile, 'filename') and audioFile.filename:
-                    file_path = await save_upload_file(audioFile, "audio")
+                    file_path, metadata = await save_upload_file(audioFile, "audio")
                     upload = await create_upload_record(
                         file_path, audioFile.filename,
                         getattr(audioFile, 'size', 0), "audio",
-                        current_admin.id, post.id, db
+                        current_user.id, post.id, db, metadata
                     )
                     uploaded_files.append(upload)
             
             elif post_data["type"] == "file" and files:
                 for file in files:
                     if hasattr(file, 'filename') and file.filename:
-                        file_path = await save_upload_file(file, "files")
+                        file_path, metadata = await save_upload_file(file, "files")
                         upload = await create_upload_record(
                             file_path, file.filename,
                             getattr(file, 'size', 0), "file",
-                            current_admin.id, post.id, db
+                            current_user.id, post.id, db, metadata
                         )
                         uploaded_files.append(upload)
             
             # Handle poster image for videos
             if posterImage and hasattr(posterImage, 'filename') and posterImage.filename:
-                file_path = await save_upload_file(posterImage, "images")
+                file_path, metadata = await save_upload_file(posterImage, "images")
                 upload = await create_upload_record(
                     file_path, posterImage.filename,
                     getattr(posterImage, 'size', 0), "image",
-                    current_admin.id, post.id, db
+                    current_user.id, post.id, db, metadata
                 )
                 uploaded_files.append(upload)
                 
                 # Set thumbnail path in post
-                post.thumbnail = f"/{file_path}"
+                post.thumbnail = file_path if file_path.startswith('http') else f"/{file_path}"
             
             # Handle caption files
             if captionFile and hasattr(captionFile, 'filename') and captionFile.filename:
-                file_path = await save_upload_file(captionFile, "captions")
+                file_path, metadata = await save_upload_file(captionFile, "captions")
                 upload = await create_upload_record(
                     file_path, captionFile.filename,
                     getattr(captionFile, 'size', 0), "caption",
-                    current_admin.id, post.id, db
+                    current_user.id, post.id, db, metadata
                 )
                 uploaded_files.append(upload)
             
             if captionFiles:
                 for caption_file in captionFiles:
                     if hasattr(caption_file, 'filename') and caption_file.filename:
-                        file_path = await save_upload_file(caption_file, "captions")
+                        file_path, metadata = await save_upload_file(caption_file, "captions")
                         upload = await create_upload_record(
                             file_path, caption_file.filename,
                             getattr(caption_file, 'size', 0), "caption",
-                            current_admin.id, post.id, db
+                            current_user.id, post.id, db, metadata
                         )
                         uploaded_files.append(upload)
         
@@ -960,10 +978,10 @@ async def create_admin_post(
             "pinned": attributes.pinned,
             "createdAt": attributes.created_at.isoformat(),
             "author": {
-                "id": str(current_admin.id),
-                "username": current_admin.username,
-                "name": current_admin.full_name,
-                "image": current_admin.image
+                "id": str(current_user.id),
+                "username": current_user.username,
+                "name": current_user.full_name,
+                "image": current_user.image
             },
             "category": category_id,
             "tags": post_data.get("tags", []),
@@ -993,7 +1011,7 @@ async def update_admin_post(
     post_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Update an existing post - handles both JSON and multipart/form-data"""
     
@@ -1012,7 +1030,7 @@ async def update_admin_post(
     
     # Check if user has permission to edit this post
     # TODO: Add proper permission checking based on user roles
-    if existing_post.user_id != current_admin.id:
+    if existing_post.user_id != current_user.id:
         # For now, only allow the author to edit, later add admin/moderator permissions
         pass  # Allow admin users to edit any post
     
@@ -1078,8 +1096,14 @@ async def update_admin_post(
     if post_type == "link" and content.get("url") == "":
         raise HTTPException(status_code=400, detail="URL cannot be empty for link posts")
     
-    if post_type == "video" and content.get("sourceType") == "url" and not content.get("videoUrl"):
-        raise HTTPException(status_code=400, detail="Video URL is required for video URL posts")
+    # For video posts, validate based on what's provided
+    if post_type == "video":
+        has_video_file = videoFile and hasattr(videoFile, 'filename') and videoFile.filename
+        has_video_url = content.get("videoUrl")
+        # If updating and neither file nor URL provided, that's okay (keep existing)
+        # But if one is provided and empty, that's an error
+        if content.get("videoUrl") == "":
+            raise HTTPException(status_code=400, detail="Video URL cannot be empty if provided")
     
     try:
         # Handle category update
@@ -1087,7 +1111,7 @@ async def update_admin_post(
         if "category" in post_data:
             category_id = await handle_category(
                 post_data.get("category"), 
-                current_admin.id, 
+                current_user.id, 
                 db
             )
         
@@ -1123,8 +1147,8 @@ async def update_admin_post(
                 if value is not None:
                     setattr(existing_post, field, value)
         
-        # Handle video URL for URL-type videos
-        if post_type == "video" and content.get("sourceType") == "url":
+        # Handle video URL for URL-type videos (when videoUrl is provided but no video file)
+        if post_type == "video" and content.get("videoUrl") and not videoFile:
             existing_post.link_url = content.get("videoUrl")
         
         # Update post attributes
@@ -1224,7 +1248,7 @@ async def update_admin_post(
             
             # Add new tags
             if post_data["tags"]:
-                await handle_tags(existing_post.id, post_data["tags"], current_admin.id, db)
+                await handle_tags(existing_post.id, post_data["tags"], current_user.id, db)
         
         # Handle file uploads (only for multipart requests)
         new_uploaded_files = []
@@ -1234,76 +1258,79 @@ async def update_admin_post(
             if post_type == "photo" and imageFiles:
                 for image_file in imageFiles:
                     if hasattr(image_file, 'filename') and image_file.filename:
-                        file_path = await save_upload_file(image_file, "images")
+                        file_path, metadata = await save_upload_file(image_file, "images")
                         upload = await create_upload_record(
                             file_path, image_file.filename, 
                             getattr(image_file, 'size', 0), "image",
-                            current_admin.id, existing_post.id, db
+                            current_user.id, existing_post.id, db, metadata
                         )
                         new_uploaded_files.append(upload)
             
-            elif post_type == "video" and content.get("sourceType") == "upload" and videoFile:
+            elif post_type == "video" and videoFile:
                 if hasattr(videoFile, 'filename') and videoFile.filename:
-                    file_path = await save_upload_file(videoFile, "videos")
+                    file_path, metadata = await save_upload_file(videoFile, "videos")
                     upload = await create_upload_record(
                         file_path, videoFile.filename,
                         getattr(videoFile, 'size', 0), "video",
-                        current_admin.id, existing_post.id, db
+                        current_user.id, existing_post.id, db, metadata
                     )
                     new_uploaded_files.append(upload)
+                    
+                    # Set the video URL in the post record for easy access
+                    existing_post.link_url = file_path if file_path.startswith('http') else f"/{file_path}"
             
             elif post_type == "audio" and audioFile:
                 if hasattr(audioFile, 'filename') and audioFile.filename:
-                    file_path = await save_upload_file(audioFile, "audio")
+                    file_path, metadata = await save_upload_file(audioFile, "audio")
                     upload = await create_upload_record(
                         file_path, audioFile.filename,
                         getattr(audioFile, 'size', 0), "audio",
-                        current_admin.id, existing_post.id, db
+                        current_user.id, existing_post.id, db, metadata
                     )
                     new_uploaded_files.append(upload)
             
             elif post_type == "file" and files:
                 for file in files:
                     if hasattr(file, 'filename') and file.filename:
-                        file_path = await save_upload_file(file, "files")
+                        file_path, metadata = await save_upload_file(file, "files")
                         upload = await create_upload_record(
                             file_path, file.filename,
                             getattr(file, 'size', 0), "file",
-                            current_admin.id, existing_post.id, db
+                            current_user.id, existing_post.id, db, metadata
                         )
                         new_uploaded_files.append(upload)
             
             # Handle poster image for videos
             if posterImage and hasattr(posterImage, 'filename') and posterImage.filename:
-                file_path = await save_upload_file(posterImage, "images")
+                file_path, metadata = await save_upload_file(posterImage, "images")
                 upload = await create_upload_record(
                     file_path, posterImage.filename,
                     getattr(posterImage, 'size', 0), "image",
-                    current_admin.id, existing_post.id, db
+                    current_user.id, existing_post.id, db, metadata
                 )
                 new_uploaded_files.append(upload)
                 
                 # Set thumbnail path in post
-                existing_post.thumbnail = f"/{file_path}"
+                existing_post.thumbnail = file_path if file_path.startswith('http') else f"/{file_path}"
             
             # Handle caption files
             if captionFile and hasattr(captionFile, 'filename') and captionFile.filename:
-                file_path = await save_upload_file(captionFile, "captions")
+                file_path, metadata = await save_upload_file(captionFile, "captions")
                 upload = await create_upload_record(
                     file_path, captionFile.filename,
                     getattr(captionFile, 'size', 0), "caption",
-                    current_admin.id, existing_post.id, db
+                    current_user.id, existing_post.id, db, metadata
                 )
                 new_uploaded_files.append(upload)
             
             if captionFiles:
                 for caption_file in captionFiles:
                     if hasattr(caption_file, 'filename') and caption_file.filename:
-                        file_path = await save_upload_file(caption_file, "captions")
+                        file_path, metadata = await save_upload_file(caption_file, "captions")
                         upload = await create_upload_record(
                             file_path, caption_file.filename,
                             getattr(caption_file, 'size', 0), "caption",
-                            current_admin.id, existing_post.id, db
+                            current_user.id, existing_post.id, db, metadata
                         )
                         new_uploaded_files.append(upload)
         
@@ -1376,7 +1403,7 @@ async def update_admin_post(
 async def delete_admin_post(
     post_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a post and all its associated data"""
     
@@ -1399,7 +1426,7 @@ async def delete_admin_post(
     
     # Check if user has permission to delete this post
     # TODO: Add proper permission checking based on user roles
-    if existing_post.user_id != current_admin.id:
+    if existing_post.user_id != current_user.id:
         # For now, only allow the author to delete, later add admin/moderator permissions
         pass  # Allow admin users to delete any post
     

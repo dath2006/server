@@ -28,7 +28,7 @@ async def get_all_settings(
     Get all settings.
     Optionally filter by group parameter (for future categorization).
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     try:
         settings = await settings_crud.get_settings(db)
         return AdminSettingsResponse(
@@ -49,7 +49,7 @@ async def get_setting_by_name(
     """
     Get a specific setting by name.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     setting = await settings_crud.get_setting_by_name(db, name)
     if not setting:
         raise HTTPException(status_code=404, detail=f"Setting '{name}' not found")
@@ -69,7 +69,7 @@ async def update_multiple_settings(
     """
     Update multiple settings at once.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     try:
         settings_dict = {}
         for name, data in settings_data.settings.items():
@@ -99,7 +99,7 @@ async def update_single_setting(
     Update a single setting by name.
     Creates the setting if it doesn't exist.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     try:
         updated_setting = await settings_crud.update_setting_by_name(
             db, 
@@ -128,7 +128,7 @@ async def delete_setting(
     """
     Delete a setting by name.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     setting = await settings_crud.get_setting_by_name(db, name)
     if not setting:
         raise HTTPException(status_code=404, detail=f"Setting '{name}' not found")

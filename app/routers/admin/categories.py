@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.auth import get_current_admin_user
+from app.auth import get_current_active_user
 from app.models import User
 from app.schemas import (
     CreateCategoryData, 
@@ -30,7 +30,7 @@ async def get_admin_categories(
     sort_by: str = Query("name", description="Sort by field (name, created_at, updated_at, display_order, post_count)"),
     sort_order: str = Query("asc", description="Sort order (asc, desc)"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get categories for admin panel with pagination, filtering, and sorting"""
     
@@ -94,7 +94,7 @@ async def get_admin_categories(
 async def search_admin_categories(
     q: str = Query(..., description="Search query"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Search categories"""
     
@@ -125,7 +125,7 @@ async def search_admin_categories(
 @router.get("/categories/stats", response_model=CategoryStatsResponse)
 async def get_category_stats(
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get category statistics"""
     
@@ -143,7 +143,7 @@ async def get_category_stats(
 async def get_admin_category(
     category_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get specific category by ID"""
     
@@ -184,7 +184,7 @@ async def get_admin_category(
 async def create_admin_category(
     category_data: CreateCategoryData,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Create new category"""
     
@@ -192,7 +192,7 @@ async def create_admin_category(
         category = await crud_categories.create_category(
             db=db, 
             category=category_data, 
-            user_id=current_admin.id
+            user_id=current_user.id
         )
         
         return AdminCategoryResponse(
@@ -218,7 +218,7 @@ async def update_admin_category(
     category_id: int,
     category_data: UpdateCategoryData,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Update existing category"""
     
@@ -264,7 +264,7 @@ async def update_admin_category(
 async def delete_admin_category(
     category_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete single category"""
     
@@ -282,7 +282,7 @@ async def delete_admin_category(
 async def bulk_delete_admin_categories(
     request: BulkDeleteRequest,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Bulk delete categories"""
     
@@ -304,7 +304,7 @@ async def bulk_delete_admin_categories(
 async def toggle_category_visibility(
     category_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Toggle category visibility"""
     
@@ -345,7 +345,7 @@ async def toggle_category_visibility(
 async def reorder_categories(
     request: ReorderCategoriesRequest,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Reorder categories"""
     

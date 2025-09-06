@@ -4,8 +4,34 @@ from sqlalchemy.future import select
 from sqlalchemy import and_, func, desc, asc, delete, or_, update
 from sqlalchemy.orm import selectinload, joinedload
 from app.models import Comment, Post, User
+from app.schemas import CommentCreate
 from datetime import datetime
 import math
+
+
+async def create_comment(db: AsyncSession, comment_data: CommentCreate, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Comment:
+    """Create a new comment"""
+    comment = Comment(
+        post_id=comment_data.post_id,
+        user_id=comment_data.user_id,
+        parent_id=comment_data.parent_id,
+        body=comment_data.content,  # Use content field
+        user_ip=ip_address or comment_data.ip_address,  # Use provided IP or extracted IP
+        user_agent=user_agent,
+        status="pending"  # Default to pending for moderation
+    )
+    
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment)
+    
+    # Load the related user and post data
+    result = await db.execute(
+        select(Comment)
+        .options(joinedload(Comment.user), joinedload(Comment.post))
+        .filter(Comment.id == comment.id)
+    )
+    return result.scalar_one()
 
 
 async def get_comment(db: AsyncSession, comment_id: int) -> Optional[Comment]:
@@ -151,15 +177,46 @@ async def update_comment_status(db: AsyncSession, comment_id: int, new_status: s
     return comment
 
 
+async def update_comment_content(db: AsyncSession, comment_id: int, new_content: str) -> Optional[Comment]:
+    """Update comment content"""
+    comment = await get_comment(db, comment_id)
+    if not comment:
+        return None
+
+    comment.body = new_content
+    await db.commit()
+    await db.refresh(comment)
+    return comment
+
+
 async def delete_comment(db: AsyncSession, comment_id: int) -> bool:
     """Delete a single comment"""
     comment = await get_comment(db, comment_id)
     if not comment:
         return False
-    
+
     await db.delete(comment)
     await db.commit()
     return True
+
+
+async def update_comment_content(db: AsyncSession, comment_id: int, content: str) -> Optional[Comment]:
+    """Update comment content"""
+    comment = await get_comment(db, comment_id)
+    if not comment:
+        return None
+    
+    comment.body = content
+    await db.commit()
+    await db.refresh(comment)
+    
+    # Load the related user and post data
+    result = await db.execute(
+        select(Comment)
+        .options(joinedload(Comment.user), joinedload(Comment.post))
+        .filter(Comment.id == comment_id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def bulk_update_comment_status(db: AsyncSession, comment_ids: List[int], new_status: str) -> int:

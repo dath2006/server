@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.auth import get_current_admin_user
+from app.auth import get_current_active_user
 from app.models import User
 from app.schemas import (
     SpamItemResponse,
@@ -90,7 +90,7 @@ async def get_admin_spam(
     sort: str = Query("created_at", description="Sort field"),
     order: str = Query("desc", description="Sort order"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get spam items for admin panel with pagination and filtering"""
     
@@ -170,7 +170,7 @@ async def update_spam_status(
     spam_id: int,
     status_update: dict,  # {"status": "spam" | "approved" | "rejected"}
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Update spam item status"""
     
@@ -196,7 +196,7 @@ async def update_spam_status(
 async def delete_spam_item(
     spam_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a spam item"""
     
@@ -215,7 +215,7 @@ async def delete_spam_item(
 async def batch_update_spam(
     batch_request: SpamBatchRequest,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Perform batch actions on multiple spam items"""
     
@@ -260,7 +260,7 @@ async def batch_update_spam(
 async def mark_comment_as_spam(
     request: MarkCommentAsSpamRequest,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Mark a specific comment as spam"""
     
@@ -278,7 +278,7 @@ async def mark_comment_as_spam(
 @router.get("/spam/stats", response_model=SpamStats)
 async def get_spam_statistics(
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get spam statistics"""
     

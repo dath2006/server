@@ -18,7 +18,7 @@ async def get_all_feathers(
     Get all feathers.
     Requires admin permissions.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     
     feathers = await feathers_crud.get_feathers(db)
     return FeathersResponse(
@@ -37,7 +37,7 @@ async def update_feather_status(
     Update feather status.
     Requires admin permissions.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     
     feather = await feathers_crud.update_feather(db, feather_id, feather_update)
     if not feather:

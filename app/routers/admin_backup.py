@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from app.database import get_db
 from app.auth import get_current_admin_user
-from app.models import User, Post, PostAttribute, Comment, Like, Share, View, Upload, Tag, Category, Group, Permission
+from app.models import User, Post, PostAttribute, Comment, Like, Share, View, Upload, Tag, Category
+from app.services import upload_file_with_fallback, Group, Permission
 from app.crud import posts as post_crud
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -1610,12 +1611,13 @@ async def create_admin_user(
     try:
         # Map role to group_id
         role_group_mapping = {
-            "admin": 1,
-            "editor": 2,
-            "contributor": 3,
-            "member": 5  # Default group
+            "admin": 1,      # Admin group
+            "member": 2,     # Member group (default group for regular users)
+            "friend": 3,     # Friend group (trusted users)
+            "banned": 4,     # Banned group
+            "guest": 5       # Guest group
         }
-        group_id = role_group_mapping.get(user_data.get("role", "member"), 5)
+        group_id = role_group_mapping.get(user_data.get("role", "member"), 2)
         
         # Create user record
         user = User(
@@ -1720,10 +1722,11 @@ async def update_admin_user(
         # Handle role change
         if "role" in user_data:
             role_group_mapping = {
-                "admin": 1,
-                "editor": 2,
-                "contributor": 3,
-                "member": 5
+                "admin": 1,      # Admin group
+                "member": 2,     # Member group (standard users)
+                "friend": 3,     # Friend group (trusted users)
+                "banned": 4,     # Banned group
+                "guest": 5       # Guest group
             }
             new_group_id = role_group_mapping.get(user_data["role"])
             if new_group_id:

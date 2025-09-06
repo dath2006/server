@@ -107,9 +107,9 @@ async def get_or_create_tags(db: AsyncSession, tag_names: List[str], post_id: in
 async def get_popular_tags(db: AsyncSession, limit: int = 10) -> List[dict]:
     """Get most popular tags (by frequency of use)"""
     result = await db.execute(
-        select(Tag.name, func.count(Tag.id).label('count'))
-        .group_by(Tag.name)
+        select(Tag.id, Tag.name, func.count(Tag.id).label('count'))
+        .group_by(Tag.id, Tag.name)
         .order_by(func.count(Tag.id).desc())
         .limit(limit)
     )
-    return [{"name": row.name, "count": row.count} for row in result]
+    return [{"id": row.id, "name": row.name, "count": row.count} for row in result]

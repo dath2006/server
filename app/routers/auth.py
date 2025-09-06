@@ -93,7 +93,7 @@ async def google_signin(
             username=google_user.username,
             google_id=google_user.google_id,
             image=google_user.image,
-            group_id=5,  # Default group for new users
+            group_id=2,  # Default group for new users (Member)
             is_active=True,
             approved=True,
             joined_at=datetime.utcnow()

@@ -18,7 +18,7 @@ async def get_all_modules(
     Get all modules.
     Requires admin permissions.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     
     modules = await modules_crud.get_modules(db)
     return ModulesResponse(
@@ -37,7 +37,7 @@ async def update_module_status(
     Update module status.
     Requires admin permissions.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     
     module = await modules_crud.update_module(db, module_id, module_update)
     if not module:
@@ -55,7 +55,7 @@ async def uninstall_module(
     Uninstall a module.
     Requires admin permissions.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     
     # Check if module exists and can be uninstalled
     module = await modules_crud.get_module_by_id(db, module_id)

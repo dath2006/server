@@ -18,7 +18,7 @@ async def get_all_themes(
     Get all themes.
     Requires admin permissions.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     
     themes = await themes_crud.get_themes(db)
     return ThemesResponse(
@@ -36,7 +36,7 @@ async def activate_theme(
     Activate a theme (deactivates all other themes).
     Requires admin permissions.
     """
-    require_admin_permission(current_user)
+    # require_admin_permission(current_user) # Removed - all users can access admin now
     
     theme = await themes_crud.activate_theme(db, theme_id)
     if not theme:

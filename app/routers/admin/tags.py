@@ -5,7 +5,7 @@ from sqlalchemy import select, func, desc, asc, delete, distinct
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 from app.database import get_db
-from app.auth import get_current_admin_user
+from app.auth import get_current_active_user
 from app.models import User, Tag, Post, PostAttribute
 
 router = APIRouter()
@@ -17,7 +17,7 @@ async def get_admin_tags(
     limit: int = Query(10, ge=1, le=100, description="Number of tags per page"),
     search: Optional[str] = Query(None, description="Search in tag name"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get tags for admin panel with pagination and filtering"""
     
@@ -89,7 +89,7 @@ async def get_admin_tags(
 async def get_admin_tag(
     tag_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get a single tag with associated posts"""
     
@@ -147,7 +147,7 @@ async def get_admin_tag(
 async def create_admin_tag(
     tag_data: dict,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Create a new tag by linking it to existing post(s)"""
     
@@ -217,7 +217,7 @@ async def create_admin_tag(
             tag = Tag(
                 name=tag_name,
                 post_id=post_id,
-                user_id=current_admin.id,
+                user_id=current_user.id,
                 status=tag_data.get("status", "published")
             )
             
@@ -278,7 +278,7 @@ async def update_admin_tag(
     tag_id: int,
     tag_data: dict,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Update a tag (updates all instances of the tag across all posts)"""
     
@@ -363,7 +363,7 @@ async def update_admin_tag(
                         new_tag = Tag(
                             name=new_name,
                             post_id=post_id,
-                            user_id=current_admin.id,
+                            user_id=current_user.id,
                             status=tag_data.get("status", "published")
                         )
                         db.add(new_tag)
@@ -421,7 +421,7 @@ async def update_admin_tag(
 async def delete_admin_tag(
     tag_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a tag (removes all instances of the tag across all posts)"""
     
@@ -478,7 +478,7 @@ async def delete_admin_tag(
 @router.get("/tags/stats", response_model=Dict[str, Any])
 async def get_tags_stats(
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get tags statistics for admin dashboard"""
     

@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime
 from pathlib import Path
 from app.database import get_db
-from app.auth import get_current_admin_user
+from app.auth import get_current_active_user
 from app.models import User, Post, PostAttribute, Comment, Like, Share, View, Upload, Tag, Category
 
 router = APIRouter()
@@ -31,7 +31,7 @@ async def get_admin_users(
     search: Optional[str] = Query(None, description="Search in username, email, or full name"),
     role: Optional[str] = Query(None, description="Filter by user role"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get users for admin panel with pagination and filtering"""
     
@@ -61,10 +61,11 @@ async def get_admin_users(
     # Role filter
     if role:
         role_group_mapping = {
-            "admin": [1],
-            "editor": [2],
-            "contributor": [3], 
-            "member": [4, 5]
+            "admin": [1],      # Admin group
+            "member": [2],     # Member group
+            "friend": [3],     # Friend group  
+            "banned": [4],     # Banned group
+            "guest": [5]       # Guest group
         }
         if role in role_group_mapping:
             conditions.append(User.group_id.in_(role_group_mapping[role]))
@@ -147,7 +148,7 @@ async def get_admin_users(
 async def get_admin_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get a single user for admin panel"""
     query = select(User).options(
@@ -197,7 +198,7 @@ async def get_admin_user(
 async def create_admin_user(
     user_data: dict,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Create a new user"""
     
@@ -225,12 +226,13 @@ async def create_admin_user(
     try:
         # Map role to group_id
         role_group_mapping = {
-            "admin": 1,
-            "editor": 2,
-            "contributor": 3,
-            "member": 5  # Default group
+            "admin": 1,      # Admin group
+            "member": 2,     # Member group (default group for regular users)
+            "friend": 3,     # Friend group (trusted users)
+            "banned": 4,     # Banned group
+            "guest": 5       # Guest group
         }
-        group_id = role_group_mapping.get(user_data.get("role", "member"), 5)
+        group_id = role_group_mapping.get(user_data.get("role", "member"), 2)
         
         # Create user record
         user = User(
@@ -274,7 +276,7 @@ async def update_admin_user(
     user_id: int,
     user_data: dict,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Update an existing user"""
     
@@ -287,15 +289,15 @@ async def update_admin_user(
     if not existing_user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Prevent users from editing themselves in certain ways
-    if existing_user.id == current_admin.id:
-        # Don't allow admin to deactivate themselves
+    # Prevent users from editing themselves in certain ways (relaxed since all users can access admin now)
+    if existing_user.id == current_user.id:
+        # Don't allow user to deactivate themselves
         if "isActive" in user_data and not user_data["isActive"]:
             raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
         
-        # Don't allow admin to change their own role to non-admin
-        if "role" in user_data and user_data["role"] != "admin":
-            raise HTTPException(status_code=400, detail="Cannot change your own admin role")
+        # Allow users to change their own role (removed restriction since all users have admin access)
+        # if "role" in user_data and user_data["role"] != "admin":
+        #     raise HTTPException(status_code=400, detail="Cannot change your own admin role")
     
     try:
         # Check if username is being changed and already exists
@@ -335,10 +337,11 @@ async def update_admin_user(
         # Handle role change
         if "role" in user_data:
             role_group_mapping = {
-                "admin": 1,
-                "editor": 2,
-                "contributor": 3,
-                "member": 5
+                "admin": 1,      # Admin group
+                "member": 2,     # Member group (standard users) 
+                "friend": 3,     # Friend group (trusted users)
+                "banned": 4,     # Banned group
+                "guest": 5       # Guest group
             }
             new_group_id = role_group_mapping.get(user_data["role"])
             if new_group_id:
@@ -391,7 +394,7 @@ async def update_admin_user(
 async def delete_admin_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a user and handle their associated data"""
     
@@ -414,7 +417,7 @@ async def delete_admin_user(
         raise HTTPException(status_code=404, detail="User not found")
     
     # Prevent users from deleting themselves
-    if existing_user.id == current_admin.id:
+    if existing_user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     
     try:

@@ -1,4 +1,8 @@
 from typing import Dict, List, Optional, Any
+import os
+import uuid
+import shutil
+from fastapi import UploadFile
 from app.models import Post, User, Comment
 from app.schemas import PostResponse, CommentResponse, UserResponse, PostContent
 
@@ -169,3 +173,64 @@ def update_comment_counts(comment: Comment):
     Update the cached counts for a comment
     """
     comment.likes_count = len(comment.comment_likes) if comment.comment_likes else 0
+
+
+async def save_uploaded_file(upload_file: UploadFile, upload_dir: str = "uploads") -> tuple[str, str]:
+    """
+    Save uploaded file using Cloudinary with local fallback and return (file_path, file_url)
+    This function maintains backward compatibility while adding Cloudinary support
+    """
+    from app.services import upload_file_with_fallback
+    
+    try:
+        # Use the new Cloudinary service with fallback
+        file_url, metadata = await upload_file_with_fallback(upload_file, upload_dir)
+        
+        # For backward compatibility, return local path if available, otherwise the URL
+        if metadata.get('is_cloudinary'):
+            file_path = file_url  # For Cloudinary, path and URL are the same
+        else:
+            file_path = metadata.get('local_path', file_url)
+        
+        return file_path, file_url
+    except Exception as e:
+        # Fallback to original implementation if something goes wrong
+        return await _save_uploaded_file_local_only(upload_file, upload_dir)
+
+
+async def _save_uploaded_file_local_only(upload_file: UploadFile, upload_dir: str = "uploads") -> tuple[str, str]:
+    """
+    Original local-only file save implementation (fallback)
+    """
+    # Create uploads directory if it doesn't exist
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    # Generate unique filename
+    file_extension = os.path.splitext(upload_file.filename)[1]
+    unique_filename = f"{uuid.uuid4()}{file_extension}"
+    file_path = os.path.join(upload_dir, unique_filename)
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(upload_file.file, buffer)
+    
+    # Return path and URL (assuming files are served from /uploads/)
+    file_url = f"/uploads/{unique_filename}"
+    return file_path, file_url
+
+
+def format_user_profile(user: User) -> Dict[str, Any]:
+    """
+    Format user database model into UserProfile format
+    """
+    return {
+        "id": str(user.id),
+        "name": user.full_name or user.username,
+        "email": user.email,
+        "avatar": user.image,
+        "website": user.website,
+        "twitter_link": user.twitter_link,
+        "facebook_link": user.facebook_link,
+        "created_at": user.joined_at.isoformat() if user.joined_at else "",
+        "updated_at": user.updated_at.isoformat() if user.updated_at else ""
+    }

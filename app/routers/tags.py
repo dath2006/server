@@ -1,11 +1,12 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.auth import get_current_active_user
 from app.models import User
-from app.schemas import TagResponse, TagCreate, TagUpdate
+from app.schemas import TagResponse, TagCreate, TagUpdate, PopularTagResponse
 from app.crud import tags as tag_crud
+
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -21,7 +22,7 @@ async def read_tags(
     return tags
 
 
-@router.get("/popular", response_model=List[dict])
+@router.get("/popular", response_model=List[PopularTagResponse])
 async def read_popular_tags(
     limit: int = Query(20, ge=1, le=50, description="Number of popular tags to return"),
     db: AsyncSession = Depends(get_db)

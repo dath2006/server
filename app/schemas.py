@@ -9,6 +9,8 @@ class UserBase(BaseModel):
     email: str
     full_name: Optional[str] = None
     website: Optional[str] = None
+    twitter_link: Optional[str] = None
+    facebook_link: Optional[str] = None
     group_id: Optional[int] = 5
     google_id: Optional[str] = None
     image: Optional[str] = None
@@ -23,6 +25,8 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     full_name: Optional[str] = None
     website: Optional[str] = None
+    twitter_link: Optional[str] = None
+    facebook_link: Optional[str] = None
     group_id: Optional[int] = None
     google_id: Optional[str] = None
     image: Optional[str] = None
@@ -33,6 +37,35 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     joined_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+# User Profile schemas (for frontend API)
+class UserProfile(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str  # Frontend expects string ID
+    name: str
+    email: str
+    avatar: Optional[str] = None
+    website: Optional[str] = None
+    twitter_link: Optional[str] = None
+    facebook_link: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+class UpdateProfileData(BaseModel):
+    name: str
+    website: Optional[str] = None
+    twitter_link: Optional[str] = None
+    facebook_link: Optional[str] = None
+
+class ChangePasswordData(BaseModel):
+    current_password: Optional[str] = None
+    new_password: str
+
+class ApiResponse(BaseModel):
+    message: Optional[str] = None
+    data: Optional[dict] = None
 
 # Group schemas
 class GroupBase(BaseModel):
@@ -80,6 +113,19 @@ class CategoryResponse(CategoryBase):
     post_count: Optional[int] = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+# Public category response (for frontend API)
+class PublicCategoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str  # Convert to string for frontend
+    name: str
+    slug: str
+    description: Optional[str] = None
+    isListed: bool
+    postCount: int = 0
+    createdAt: str
+    updatedAt: str
 
 # Post schemas
 class PostBase(BaseModel):
@@ -199,6 +245,12 @@ class TagResponse(TagBase):
     id: int
     created_at: Optional[datetime] = None
 
+# Popular tag schema
+class PopularTagResponse(BaseModel):
+    id: int
+    name: str
+    count: int
+
 # Comment schemas
 class CommentBase(BaseModel):
     post_id: int
@@ -234,8 +286,10 @@ class ViewBase(BaseModel):
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None
 
-class ViewCreate(ViewBase):
-    pass
+class ViewCreate(BaseModel):
+    post_id: int
+    user_id: Optional[int] = None
+    ip_address: Optional[str] = None
 
 class ViewUpdate(BaseModel):
     post_id: Optional[int] = None
@@ -251,10 +305,12 @@ class ViewResponse(ViewBase):
 # Like schemas
 class LikeBase(BaseModel):
     post_id: int
-    user_id: int
+    user_id: Optional[int] = None
 
-class LikeCreate(LikeBase):
-    pass
+class LikeCreate(BaseModel):
+    post_id: int
+    user_id: Optional[int] = None
+    ip_address: Optional[str] = None
 
 class LikeUpdate(BaseModel):
     post_id: Optional[int] = None
@@ -549,9 +605,17 @@ class CommentBase(BaseModel):
     notify: Optional[bool] = False
 
 
-class CommentCreate(CommentBase):
-    body: str
+class CommentCreate(BaseModel):
     post_id: int
+    content: str
+    user_id: Optional[int] = None
+    parent_id: Optional[int] = None
+    ip_address: Optional[str] = None
+    
+    # Map content to body for internal use
+    @property
+    def body(self) -> str:
+        return self.content
 
 
 class CommentUpdate(BaseModel):
@@ -616,37 +680,9 @@ class GroupResponse(GroupBase):
     id: int
 
 
-class LikeBase(BaseModel):
-    post_id: int
-    user_id: int
-    session_hash: str
-
-
-class LikeCreate(LikeBase):
-    pass
-
-
-class LikeResponse(LikeBase):
-    model_config = ConfigDict(from_attributes=True)
-    
-    id: int
-    timestamp: Optional[datetime] = None
-
-
 class ViewBase(BaseModel):
     post_id: int
     user_id: Optional[int] = 0
-
-
-class ViewCreate(ViewBase):
-    pass
-
-
-class ViewResponse(ViewBase):
-    model_config = ConfigDict(from_attributes=True)
-    
-    id: int
-    created_at: Optional[datetime] = None
 
 
 # Authentication schemas
@@ -1036,3 +1072,36 @@ class ThemeUpdate(BaseModel):
 class ThemesResponse(BaseModel):
     data: List[ThemeResponse]
     total: int
+
+
+# Permissions schemas
+class PermissionBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class PermissionResponse(PermissionBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    group_id: int
+    created_at: datetime
+
+class GroupBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class GroupResponse(GroupBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    created_at: datetime
+
+class PermissionsForRoleResponse(BaseModel):
+    """Response schema for permissions API endpoint"""
+    role: str
+    group_id: Optional[int] = None
+    group_name: Optional[str] = None
+    permissions: Dict[str, bool]
+    
+class AvailableRolesResponse(BaseModel):
+    """Available roles/groups response"""
+    roles: List[str]
+    groups: List[GroupResponse]

@@ -2,7 +2,7 @@ from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.auth import get_current_admin_user
+from app.auth import get_current_active_user
 from app.models import User
 from app.schemas import (
     CommentResponse,
@@ -120,7 +120,7 @@ async def get_admin_comments(
     sort: str = Query("created_at", description="Sort field"),
     order: str = Query("desc", description="Sort order"),
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get comments for admin panel with pagination and filtering - grouped by posts"""
     
@@ -197,7 +197,7 @@ async def update_comment_status(
     comment_id: int,
     status_update: CommentUpdateStatus,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Update comment status"""
     
@@ -218,7 +218,7 @@ async def update_comment_status(
 async def delete_comment(
     comment_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Delete a comment"""
     
@@ -237,7 +237,7 @@ async def delete_comment(
 async def batch_update_comments(
     batch_request: CommentBatchRequest,
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_active_user)
 ):
     """Perform batch actions on multiple comments"""
     

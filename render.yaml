@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: chyrp-lite-api
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "./start.sh"
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13
+      - key: ENVIRONMENT
+        value: production
+      # Add your environment variables here:
+      - key: FRONTEND_URL
+        value: https://chyrp-lite.vercel.app
+      # Add other environment variables as needed
+      # - key: GOOGLE_CLIENT_ID
+      #   value: your-google-client-id
+      # - key: GOOGLE_CLIENT_SECRET
+      #   value: your-google-client-secret
+      # - key: CLOUDINARY_CLOUD_NAME
+      #   value: your-cloudinary-cloud-name
+      # - key: CLOUDINARY_API_KEY
+      #   value: your-cloudinary-api-key
+      # - key: CLOUDINARY_API_SECRET
+      #   value: your-cloudinary-api-secret

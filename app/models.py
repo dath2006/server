@@ -20,14 +20,17 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     hashed_password = Column(String(255))
-    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, default=5)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, default=2)
     google_id = Column(String(255), unique=True)
     website = Column(String(500))
+    twitter_link = Column(String(500))  # New field
+    facebook_link = Column(String(500))  # New field
     image = Column(String(500))
     full_name = Column(String(255))
     approved = Column(Boolean, nullable=False, default=True)
     is_active = Column(Boolean, nullable=False, default=True)
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())  # New field
     group = relationship("Group", back_populates="users")
     posts = relationship("Post", back_populates="user")
     categories = relationship("Category", back_populates="user")
